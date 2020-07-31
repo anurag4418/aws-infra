@@ -1,0 +1,31 @@
+awsinfra_region: us-east-1
+awsinfra_keypair: nVirginia-key
+awsinfra_security_group: devSecurityGroup
+awsinfra_instance_type: t2.micro
+awsinfra_ami_id: ami-0323c3dd2da7fb37d
+awsinfra_ec2_count: 1
+awsinfra_vpc_name: dev-vpc
+awsinfra_vpc_cidr_block: '172.35.0.0/16'
+awsinfra_project_name: aws-infra
+awsinfra_environment_name: dev
+awsinfra_public_subnet1_cidr: '172.35.1.0/24'
+awsinfra_public_subnet2_cidr: '172.35.2.0/24'
+awsinfra_private_subnet1_cidr: '172.35.3.0/24'
+awsinfra_lb_name: 'dev-lb'
+
+web_instance_details:
+ - name: webserver1
+   subnet_id: "{{ awsinfra_public_subnet_az1_id }}"
+   zone: us-east-1a
+ - name: webserver2
+   subnet_id: "{{ awsinfra_public_subnet_az2_id }}"
+   zone: us-east-1b
+
+db_instance_details:
+ - name: dbserver1
+   subnet_id: "{{ awsinfra_private_subnet_az1_id }}"
+   zone: us-east-1a
+
+web_elb_details:
+ - zone: us-east-1a
+ - zone: us-east-1b

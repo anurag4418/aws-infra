@@ -1,0 +1,270 @@
+- name: Add a key pair
+  ec2_key:
+    region: "{{ awsinfra_region }}"
+    name: "{{ awsinfra_keypair }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    state: present
+
+- name: Create VPC
+  ec2_vpc_net:
+    name: "{{ awsinfra_vpc_name }}"
+    cidr_block: "{{ awsinfra_vpc_cidr_block }}"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    state: present
+    tags:
+      project: "{{ awsinfra_project_name }}"
+      environment: "{{ awsinfra_environment_name }}"
+  register: awsinfra_vpc
+
+- name: Get VPC ID
+  set_fact:
+    awsinfra_vpc_id: "{{ awsinfra_vpc.vpc.id }}"
+
+- name: Create a security-group
+  ec2_group:
+    name: "{{ awsinfra_security_group }}"
+    description: The webservers security group
+    region: "{{ awsinfra_region }}"
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    rules:
+      - proto: tcp
+        from_port: 22
+        to_port: 22
+        cidr_ip: 0.0.0.0/0
+      - proto: tcp
+        from_port: 80
+        to_port: 80
+        cidr_ip: 0.0.0.0/0
+    rules_egress:
+      - proto: tcp
+        from_port: 80
+        to_port: 80
+        cidr_ip: 0.0.0.0/0        
+  register: dev_secgroup
+
+- name: Create Internet Gateway
+  ec2_vpc_igw:
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    state: present
+  register: awsinfra_vpc_igw
+
+- name: Get Internet Gateway ID
+  set_fact:
+    awsinfra_igw_id: "{{ awsinfra_vpc_igw.gateway_id }}"
+
+- name: Create Public Subnet1
+  ec2_vpc_subnet:
+    state: present
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    cidr: "{{ awsinfra_public_subnet1_cidr }}"
+    az: "{{ awsinfra_region }}a"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    tags:
+      Name: "{{ awsinfra_vpc_name }}-public01"
+  register: awsinfra_public_subnet_az1
+
+- name: Get Public Subnet ID
+  set_fact:
+    awsinfra_public_subnet_az1_id: "{{ awsinfra_public_subnet_az1.subnet.id }}"
+
+- name: Create Public Subnet2
+  ec2_vpc_subnet:
+    state: present
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    cidr: "{{ awsinfra_public_subnet2_cidr }}"
+    az: "{{ awsinfra_region }}b"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    tags:
+      Name: "{{ awsinfra_vpc_name }}-public02"
+  register: awsinfra_public_subnet_az2
+
+- name: Get Public Subnet ID
+  set_fact:
+    awsinfra_public_subnet_az2_id: "{{ awsinfra_public_subnet_az2.subnet.id }}"
+
+- name: Setup Public Subnet Route Table
+  ec2_vpc_route_table:
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    tags:
+      Name: "{{ awsinfra_vpc_name }}-publicRT"
+    subnets:
+      - "{{ awsinfra_public_subnet_az1_id }}"
+      - "{{ awsinfra_public_subnet_az2_id }}"
+    routes:
+      - dest: "0.0.0.0/0"
+        gateway_id: "{{ awsinfra_igw_id }}"
+
+- name: Create Private Subnet1
+  ec2_vpc_subnet:
+    state: present
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    cidr: "{{ awsinfra_private_subnet1_cidr }}"
+    az: "{{ awsinfra_region }}a"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"     
+    tags:
+      Name: "{{ awsinfra_vpc_name }}-private01"
+  register: awsinfra_private_subnet_az1   
+
+- name: Get Private Subnet ID
+  set_fact:
+    awsinfra_private_subnet_az1_id: "{{ awsinfra_private_subnet_az1.subnet.id }}"
+
+- name: Create NAT Gateway
+  ec2_vpc_nat_gateway:
+    state: present
+    subnet_id: "{{ awsinfra_public_subnet_az1_id }}"
+    wait: yes
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}" 
+    if_exist_do_not_create: true
+  register: awsinfra_nat_gateway
+
+- name: Get NAT Gateway ID
+  set_fact:
+    awsinfra_nat_gateway_id: "{{ awsinfra_nat_gateway.nat_gateway_id }}"
+
+- name: Setup Private Subnet Route Table
+  ec2_vpc_route_table:
+    vpc_id: "{{ awsinfra_vpc_id }}"
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"     
+    tags:
+      Name: "{{ awsinfra_vpc_name }}-privateRT"
+    subnets:
+      - "{{ awsinfra_private_subnet_az1_id }}"
+    routes:
+      - dest: "0.0.0.0/0"
+        gateway_id: "{{ awsinfra_nat_gateway_id }}"    
+
+- name: Create the elastic load balancer
+  ec2_elb_lb:
+    name: "{{ awsinfra_lb_name }}"
+    state: present
+    region: "{{ awsinfra_region }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    subnets:
+      - "{{ awsinfra_public_subnet_az1_id }}"
+      - "{{ awsinfra_public_subnet_az2_id }}"
+    listeners:
+      - protocol: http
+        load_balancer_port: 80
+        instance_port: 80
+    health_check:
+        ping_protocol: http # options are http, https, ssl, tcp
+        ping_port: 80
+        ping_path: "/index.html" # not required for tcp or ssl
+        response_timeout: 5 # seconds
+        interval: 30 # seconds
+        unhealthy_threshold: 2
+        healthy_threshold: 10        
+  register: elb
+
+- debug:
+    msg: "{{ elb }}"
+
+- name: Create web servers
+  ec2:
+    group_id:
+     - "{{ dev_secgroup.group_id }}"
+     - "{{ elb.elb.security_group_ids | first }}"
+    region: "{{ awsinfra_region }}"
+    keypair: "{{ awsinfra_keypair }}"
+    instance_type: "{{ awsinfra_instance_type }}"
+    vpc_subnet_id: "{{ item.subnet_id }}"
+    image: "{{ awsinfra_ami_id }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"
+    wait: yes
+    exact_count: "{{ awsinfra_ec2_count }}"
+    count_tag:
+      Name: "{{ item.name }}"
+    zone: "{{ item.zone }}"
+    instance_tags:
+      Name: "{{ item.name }}"
+      project: "{{ awsinfra_project_name }}"
+      environment: "{{ awsinfra_environment_name }}"
+      #vpc_subnet_id: "{{ item.subnet_id }}"
+    assign_public_ip: yes
+  with_items: "{{ web_instance_details }}"
+  register: ec2web
+
+- debug:
+    msg: "{{ ec2web }}"
+
+- name: Create db servers
+  ec2:
+    group: "{{ awsinfra_security_group }}"
+    region: "{{ awsinfra_region }}"
+    keypair: "{{ awsinfra_keypair }}"
+    instance_type: "{{ awsinfra_instance_type }}"
+    #vpc_subnet_id: "{{ item.subnet_id }}"
+    image: "{{ awsinfra_ami_id }}"
+    aws_access_key: "{{ ec2_access_key }}"
+    aws_secret_key: "{{ ec2_secret_key }}"     
+    wait: yes
+    count: "{{ awsinfra_ec2_count }}"
+    zone: "{{ item.zone }}"
+    instance_tags:
+      Name: "{{ item.name }}"
+      project: "{{ awsinfra_project_name }}"
+      environment: "{{ awsinfra_environment_name }}"
+      vpc_subnet_id: "{{ item.subnet_id }}"
+      assign_public_ip: no
+  with_items: "{{ db_instance_details }}"   
+  register: ec2db
+
+- debug:
+    msg: "{{ ec2db }}"    
+
+- name: Wait for SSH to come up for servers
+  wait_for: host={{ item.public_ip }} port=22 delay=10 timeout=60
+  with_items: "{{ ec2web.results[0].tagged_instances }}"
+
+- name: Add the newly created web servers to webserver group so that we can further contact it
+  add_host:
+    name: "{{ item.public_ip }}"
+    groups: webservers
+    ansible_ssh_host: "{{ item.public_ip }}"
+    private_ip: "{{ item.private_ip }}"
+  with_items: "{{ ec2web.results[0].tagged_instances }}"  
+
+- name: Add the newly created web servers to webserver group so that we can further contact it
+  add_host:
+    name: "{{ item.public_ip }}"
+    groups: webservers
+    ansible_ssh_host: "{{ item.public_ip }}"
+    private_ip: "{{ item.private_ip }}"
+  with_items: "{{ ec2web.results[1].tagged_instances }}" 
+
+- name: Wait for SSH to come up for dbservers
+  wait_for: host={{ item.private_ip }} port=22 delay=10 timeout=60
+  with_items: "{{ ec2db.results[0].instances }}"
+
+- name: Add the newly created web servers to webserver group so that we can further contact it
+  add_host:
+    name: "{{ item.private_ip }}"
+    groups: dbservers
+    ansible_ssh_host: "{{ item.private_ip }}"
+    private_ip: "{{ item.private_ip }}"
+  with_items: "{{ ec2db.results[0].tagged_instances }}"   
+

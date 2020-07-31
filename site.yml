@@ -1,0 +1,3 @@
+- import_playbook: awsinfra.yml
+- import_playbook: httpd-aws.yml
+- import_playbook: aws-elb.yml
